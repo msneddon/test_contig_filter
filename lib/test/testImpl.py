@@ -1,4 +1,5 @@
 #BEGIN_HEADER
+# The header block is where all import statments should live
 import sys
 import traceback
 import uuid
@@ -24,6 +25,7 @@ This sample module contains one small method - filter_contigs.
     # the latter method is running.
     #########################################
     #BEGIN_CLASS_HEADER
+    # Class variables and functions can be defined in this block
     workspaceURL = None
     #END_CLASS_HEADER
 
@@ -40,8 +42,13 @@ This sample module contains one small method - filter_contigs.
         # return variables are: returnVal
         #BEGIN filter_contigs
         
+        # Print statements to stdout/stderr are captured and available as the method log
         print('Starting filter contigs method.')
         
+
+        # Step 1 - Parse/examine the parameters and catch any errors
+        # It is important to check that parameters exist and are defined, and that nice error
+        # messages are returned to the user
         if 'workspace' not in params:
             raise ValueError('Parameter workspace is not set in input arguments')
         workspace_name = params['workspace']
@@ -59,20 +66,28 @@ This sample module contains one small method - filter_contigs.
         if min_length < 0:
             raise ValueError('min_length parameter shouldn\'t be negative (' + str(min_length) + ')')
         
+
+        # Step 2- Download the input data
+        # Most data will be based to your method by its workspace name.  Use the workspace to pull that data
+        # (or in many cases, subsets of that data).  The user token is used to authenticate with the KBase
+        # data stores and other services.  DO NOT PRINT OUT OR OTHERWISE SAVE USER TOKENS
         token = ctx['token']
         wsClient = workspaceService(self.workspaceURL, token=token) 
         try: 
+            # Note that results from the workspace are returned in a list, and the actual data is saved
+            # in the 'data' key.  So to get the ContigSet data, we get the first element of the list, and
+            # look at the 'data' field.
             contigSet = wsClient.get_objects([{'ref': workspace_name+'/'+contigset_id}])[0]['data']
         except:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
             orig_error = ''.join('    ' + line for line in lines)
             raise ValueError('Error loading original ContigSet object from workspace:\n' + orig_error)
-        provenance = ctx['provenance']
         
         print('Got ContigSet data.')
         
-        # save the contigs to a new list
+
+        # Step 3- Actually perform the filter operation, saving the good contigs to a new list
         good_contigs = []
         n_total = 0;
         n_remaining = 0;
@@ -87,7 +102,17 @@ This sample module contains one small method - filter_contigs.
         
         print('Filtered ContigSet to '+str(n_remaining)+' contigs out of '+str(n_total))
         
-        # save the new object to the workspace
+
+        # Step 4- Save the new ContigSet back to the Workspace
+        # When objects are saved, it is important to always set the Provenance of that object.  The basic
+        # provenance info is given to you as part of the context object.  You can add additional information
+        # to the provenance as necessary.  Here we keep a pointer to the input data object.
+        provenance = [{}]
+        if 'provenance' in ctx:
+            provenance = ctx['provenance']
+        # add additional info to provenance here, in this case the input data object reference
+        provenance[0]['input_ws_objects']=[workspace_name+'/'+contigset_id]
+
         obj_info_list = None
         try:
 	        obj_info_list = wsClient.save_objects({
@@ -108,7 +133,7 @@ This sample module contains one small method - filter_contigs.
             raise ValueError('Error saving filtered ContigSet object to workspace:\n' + orig_error)
         
         info = obj_info_list[0]
-        # Workspace Object Info is a tuple defined as:
+        # Workspace Object Info is a tuple defined as-
         # absolute ref = info[6] + '/' + info[0] + '/' + info[4]
         # 0 - obj_id objid - integer valued ID of the object
         # 1 - obj_name name - the name of the data object
@@ -122,10 +147,11 @@ This sample module contains one small method - filter_contigs.
         # 9 - int size - size of the json content
         # 10 - usermeta meta - dictionary of string keys/values of user set or auto generated metadata
 
-        print('saved:'+pformat(info))
+        print('saved ContigSet:'+pformat(info))
 
 
-         # Create a Report of the method
+        # Step 5- Create the Report for this method, and return the results
+        # Create a Report of the method
         report = 'New ContigSet saved to: '+str(info[7]) + '/'+str(info[1])+'/'+str(info[4])+'\n'
         report += 'Number of initial contigs:      '+ str(n_total) + '\n'
         report += 'Number of contigs removed:      '+ str(n_total - n_remaining) + '\n'
